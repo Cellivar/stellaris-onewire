@@ -83,8 +83,10 @@
 #include "inc/hw_memmap.h"
 #include "driverlib/gpio.h"
 #include "driverlib/sysctl.h"
+#include "utils/ustdlib.h"
 
-#include "pinlib/DigitalIOPin.h"
+#include "stellaris-pins/DigitalIOPin.h"
+//#include "ustl-1.6/ustl.h"
 
 // OneWire bus speed settings
 #define OW_SPEED_OVERDRIVE	0
@@ -119,7 +121,7 @@ typedef unsigned char BYTE;
 class OneWireMaster
 {
 public:
-	OneWireMaster(unsigned int bus_speed);
+	OneWireMaster(unsigned int busSpeed);
 	OneWireMaster
 		( unsigned int busSpeed
 		, unsigned long gpioPeriph
@@ -130,7 +132,7 @@ public:
 	// Standard bus functions
 	int Reset(void);
 	int ReadByte(void);
-	int WriteByte(int data);
+	void WriteByte(int data);
 	
 	int TouchByte(int data);
 	void Block(BYTE* data, int data_len);
@@ -144,9 +146,11 @@ public:
 	int SkipOverdrive(void);
 
 	// CRC check functions
-	static BYTE crc8(BYTE* address, BYTE length);
-	static unsigned short crc16(unsigned short* data, unsigned short length);
+	static BYTE CRC8(BYTE* address, BYTE length);
+	static unsigned short CRC16(unsigned short* data, unsigned short length);
 
+	// Container for device addresses
+	vector<vector<BYTE>> devices;
 private:
 	// Timing values array, populated based on the bus speed setting
 	const int* timing;
@@ -155,13 +159,14 @@ private:
 	DigitalIOPin GPIOPin;
 
 	// read/write single bits to the bus
-	void writeBit(int bit);
-	int readBit(void);
+	void WriteBit(int bit);
+	int ReadBit(void);
 
 	// Timing functions/constants
-	void WaitUS(unsigned int ms);
+	void WaitUS(unsigned int us);
 	static const int standardTime[10];
 	static const int overdriveTime[10];
+
 };
 
 #endif // STELLARIS_ONEWIRE_LIBRARY_CHAPMAN_H

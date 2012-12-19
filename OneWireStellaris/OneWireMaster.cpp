@@ -102,9 +102,9 @@ const int OneWireMaster::overdriveTime[10] = {1.5, 7.5, 7.5, 2.5, 0.75, 7, 2.5, 
  * @param[in] bus_speed Bus speed timing table to use. 0 for overdrive, 1 for
  * standard speed
  * 
- * This constructor will test to make sure the supplied values are correct 
- * before attempting to use them. If the supplied values don't work for
- * whatever reason it will throw an error condition.
+ * Please note that while overdrive support is present the Stellaris is not
+ * capable of generating a precise enough clock (sub-uS range) to garuntee
+ * reliable operation. YMMV.
  */
 OneWireMaster::OneWireMaster
 	( unsigned int busSpeed
@@ -114,28 +114,34 @@ OneWireMaster::OneWireMaster
 	)
 	: GPIOPin(gpioPeriph, gpioPort, gpioPinmask)
 {
-
 	if (busSpeed == 0)
 		timing = overdriveTime;
 	else
 		timing = standardTime;
 }
+
 /**
  * Same as two argument constructor, except this will default to using pin 
  * A2 as the OneWire bus.
+ *
+ * @param[in] busSpeed Bus speed timing table to use. 0 for overdrive, 1 for
+ * standard speed.
+ * 
+ * Please note that while overdrive support is present the Stellaris is not
+ * capable of generating a precise enough clock (sub-uS range) to garuntee
+ * reliable operation. YMMV.
  */
-OneWireMaster::OneWireMaster(unsigned int bus_speed)
+OneWireMaster::OneWireMaster(unsigned int busSpeed)
 	:GPIOPin(SYSCTL_PERIPH_GPIOA, GPIO_PORTF_BASE, GPIO_PIN_1)
 {
-
-	if (bus_speed == 0)
+	if (busSpeed == 0)
 		timing = overdriveTime;
 	else
 		timing = standardTime;
 }
 
 /**
- * Wait for specified number of milliseconds
+ * Wait for specified number of microeconds
  *
  * Note that the use of SysCtlClockGet() may cause some small clock drift, as
  * that operation takes a finite amount of time to perform. It would be better
@@ -145,15 +151,16 @@ OneWireMaster::OneWireMaster(unsigned int bus_speed)
  * Note that the division by 3 is due to SysCtlDelay using 3 operations for
  * it's wait loop, therefore any clock speed must be divided by 3.
  */
-void OneWireMaster::WaitUS(unsigned int ms)
+void OneWireMaster::WaitUS(unsigned int us)
 {
-	SysCtlDelay((SysCtlClockGet() / 3) / (ms * 1000));
+	SysCtlDelay((SysCtlClockGet() / 3) / (us * 1000000));
 	// Alternative with pre-set clock:
-	// SysCtlDelay((CLOCKSPEEDVALUE / 3) / (ms * 1000));
+	// SysCtlDelay((CLOCKSPEEDVALUE / 3) / (us * 1000000));
 }
 
 /**
- * Reset the OneWire bus for new commands
+ * Reset the OneWire bus for new commands. Based off of example code from
+ * Dallas Semiconductor.
  *
  * Sends out the RESET signal across the OneWire pin and waits for the response
  * presence detect.
@@ -164,6 +171,189 @@ int OneWireMaster::Reset(void)
 {
 	int result = 0;
 
-	
+	WaitUS(timing[6]);	
+	GPIOPin.Output();
+	GPIOPin.Write(0);	// Bring bus low for reset
+	WaitUS(timing[7]);	// Wait for reset duration
+	GPIOPin.Input();	// Bring bus to input mode
+	WaitUS(timing[8]);	// Wait for presence detect
+	result = !(GPIOPin.Read() & 0x01);	// See if there is a presence detect
+	WaitUS(timing[9]);	// Finish out presence detect, ready for commands
 
+	return result;
 }
+
+/**
+ * Write a bit to the line.
+ */
+void OneWireMaster::WriteBit(int bit)
+{
+	bit = bit & 0x01; // Make sure we don't have something silly here
+
+	if (bit)	// '1' bit
+	{
+		GPIOPin.Output();	// Make sure we're in output
+		GPIOPin.Write(0);	// Bring bus low for reset
+		WaitUS(timing[0]);	// Wait for spec duration
+		GPIOPin.Input();	// Release for pullup
+		WaitUS(timing[1]);	// Wait for recovery time
+	}
+	else	// '0' bit
+	{
+		GPIOPin.Output();	// Set to output
+		GPIOPin.Write(0);	// Pull line low
+		WaitUS(timing[2]);	// Wait for spec duration
+		GPIOPin.Input();	// Release for pullup
+		WaitUS(timing[3]);	// Wait for recovery time
+	}
+}
+
+/**
+ * Read a bit from the line
+ */
+int OneWireMaster::ReadBit(void)
+{
+	BYTE result;
+
+	GPIOPin.Output();	// Set to output
+	GPIOPin.Write(0);	// Pull line low
+	WaitUS(timing[0]);	// Wait for control
+	GPIOPin.Input();	// Release for pullup
+	WaitUS(timing[4]);	// Wait for signal from slaves
+	result = GPIOPin.Read() & 0x01;	// Read the value on the line
+	WaitUS(timing[5]);	// Wait for bus to finish operation
+
+	return result;
+}
+
+/**
+ * Write a byte out to the line. This is a batch operation of WriteBit.
+ */
+void OneWireMaster::WriteByte(int data)
+{
+	// Loop through the byte, least significant bit first.
+	for (int i = 0; i < 8; ++i)
+	{
+		WriteBit(data & 0x01);
+
+		// Shift byte for next bit
+		data >>= 1;
+	}
+}
+
+/**
+ * Read a byte from the line. This is a batch operation of ReadBit.
+ */
+int OneWireMaster::ReadByte(void)
+{
+	int result = 0;
+
+	for (int i = 0; i < 8; ++i)
+	{
+		// Shift result
+		result >>= 1;
+
+		// If result is one, set MS bit
+		if (ReadBit()) result |= 0x80;
+	}
+
+	return result;
+}
+
+/**
+ * I've never seen this actually used, but here you go. Write a OneWire data
+ * byte and return the sampled result.
+ */
+int OneWireMaster::TouchByte(int data)
+{
+	int result = 0;
+	
+	for (int loop = 0; loop < 8; loop++)
+	{
+		// shift the result to get it ready for the next bit
+		result >>= 1;
+		
+		// If sending a '1' then read a bit else write a '0'
+		if (data & 0x01)
+		{
+			if (ReadBit()) result |= 0x80;
+		}
+		else WriteBit(0);
+		
+		// shift the data byte for the next bit
+		data >>= 1;
+	}
+	
+	return result;
+}
+
+/**
+ * Not seen this one used either, but it is for writing a block of OneWire data
+ * byes and returning the sampled results in the same buffer.
+ */
+void OneWireMaster::Block(BYTE* data, int data_len)
+{
+	for (int loop = 0; loop < data_len; loop++)
+	{
+		data[loop] = TouchByte(data[loop]);
+	}
+}
+
+/**
+ * Set timing to overdrive, and perform overdrive skip operation. Returns 0 if
+ * no devices are found on a standard speed reset. Returns result of an
+ * overdrive presence detect, if any OD devices are detected it will be 1.
+ *
+ * Note that the timing accuracy of lower clock speeds can result in inaccurate
+ * timing pulses for the clock. 50Mhz will usually result in accurate values
+ * however the clock drift of individual operations can throw off the timing.
+ * If you find overdrive does not work, fall back onto standard timings.
+ */
+int OneWireMaster::SkipOverdrive()
+{
+	timing = standardTime;		// Make sure we're on standard timings
+	if (!Reset()) return 0;		// If nothing shows up, fail out
+	WriteByte(OVERDRIVE_SKIP);	// Run Overdrive Skip command
+	timing = overdriveTime;		// Set to ovedrive timings
+	return Reset();				// Return result of overdrive presence
+}
+
+/**
+ * Perform a ROM select operation
+ */
+void OneWireMaster::MatchROM(BYTE rom[8])
+{
+	WriteByte(MATCH_ROM);	// Perform Match Rom command
+
+	// Write out the address
+	for (int i = 0; i < 8; ++i) WriteByte(rom[i]);
+}
+
+/**
+ * Perform a ROM skip, for single device use.
+ */
+void OneWireMaster::SkipROM()
+{
+	WriteBytes(SKIP_ROM);	// Perform Skip ROM command
+}
+
+/**
+ * Perform a ROM search. This function will return the ROM address of
+ * the last found device. To begin a new search, call this function with
+ * no arguments. If a ROM address is provided as an argument, then it will
+ * attempt to find a new device with a different ROM address. If no new devices
+ * are found then the function will return 0.
+ *
+ * This makes use of the seacrh algorithm described by Dallas Semiconductor.
+ */
+unsigned long OneWireMaster::Search(unsigned long
+
+	// Send a reset
+	// Write the SEARCH_ROM command
+
+	// Read bit A -> Address
+	// Read bit B -> Inverse of address
+	// Check if A == B
+	// Yes -> Devices on the network with both 1 and 0 here.
+	//		Choose a direction based on previous directions
+	// No -> A is the finalized bit
