@@ -86,7 +86,7 @@
 #include "utils/ustdlib.h"
 
 #include "stellaris-pins/DigitalIOPin.h"
-//#include "ustl-1.6/ustl.h"
+#include "uSTL/uvector.h"
 
 // OneWire bus speed settings
 #define OW_SPEED_OVERDRIVE	0

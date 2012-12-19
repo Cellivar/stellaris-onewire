@@ -114,6 +114,9 @@ OneWireMaster::OneWireMaster
 	)
 	: GPIOPin(gpioPeriph, gpioPort, gpioPinmask)
 {
+	// Set the pin to a 4mA open-drain weak pull up, per 1-wire spec.
+	this->GPIOPin.PullMode(GPIO_STRENGTH_4MA, GPIO_PIN_TYPE_OD_WPU);
+
 	if (busSpeed == 0)
 		timing = overdriveTime;
 	else
@@ -132,8 +135,11 @@ OneWireMaster::OneWireMaster
  * reliable operation. YMMV.
  */
 OneWireMaster::OneWireMaster(unsigned int busSpeed)
-	:GPIOPin(SYSCTL_PERIPH_GPIOA, GPIO_PORTF_BASE, GPIO_PIN_1)
+	:GPIOPin(SYSCTL_PERIPH_GPIOA, GPIO_PORTA_BASE, GPIO_PIN_2)
 {
+	// Set the pin to a 4mA open-drain weak pull up, per 1-wire spec.
+	this->GPIOPin.PullMode(GPIO_STRENGTH_4MA, GPIO_PIN_TYPE_OD_WPU);
+
 	if (busSpeed == 0)
 		timing = overdriveTime;
 	else
