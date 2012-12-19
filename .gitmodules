@@ -1,3 +1,6 @@
 [submodule "OneWireStellaris/stellaris-pins"]
 	path = OneWireStellaris/stellaris-pins
 	url = git@github.com:MrDoomBringer/stellaris-pins.git
+[submodule "OneWireStellaris/uSTL"]
+	path = OneWireStellaris/uSTL
+	url = git@github.com:MrDoomBringer/uSTL.git
