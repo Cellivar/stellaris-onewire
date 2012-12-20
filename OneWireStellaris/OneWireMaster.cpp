@@ -319,7 +319,7 @@ int OneWireMaster::SkipOverdrive()
 {
 	timing = standardTime;		// Make sure we're on standard timings
 	if (!Reset()) return 0;		// If nothing shows up, fail out
-	WriteByte(OVERDRIVE_SKIP);	// Run Overdrive Skip command
+	WriteByte(OW_OVERDRIVE_SKIP);	// Run Overdrive Skip command
 	timing = overdriveTime;		// Set to ovedrive timings
 	return Reset();				// Return result of overdrive presence
 }
@@ -329,7 +329,7 @@ int OneWireMaster::SkipOverdrive()
  */
 void OneWireMaster::MatchROM(BYTE rom[8])
 {
-	WriteByte(MATCH_ROM);	// Perform Match Rom command
+	WriteByte(OW_MATCH_ROM);	// Perform Match Rom command
 
 	// Write out the address
 	for (int i = 0; i < 8; ++i) WriteByte(rom[i]);
@@ -340,26 +340,223 @@ void OneWireMaster::MatchROM(BYTE rom[8])
  */
 void OneWireMaster::SkipROM()
 {
-	WriteBytes(SKIP_ROM);	// Perform Skip ROM command
+	WriteByte(OW_SKIP_ROM);	// Perform Skip ROM command
 }
 
 /**
- * Perform a ROM search. This function will return the ROM address of
- * the last found device. To begin a new search, call this function with
- * no arguments. If a ROM address is provided as an argument, then it will
- * attempt to find a new device with a different ROM address. If no new devices
- * are found then the function will return 0.
+ * Perform a ROM search and populate the Addresses 2D vector with addresses of
+ * found devices. The primary vector is a list of addresses, the secondary is
+ * the bytes of the address itself. The return value is used to determine if
+ * something went wrong during the search process. If this is 0, something bad
+ * happened. Anything else indicates the number of returned addresses.
  *
  * This makes use of the seacrh algorithm described by Dallas Semiconductor.
  */
-unsigned long OneWireMaster::Search(unsigned long
+int OneWireMaster::Search(void)
+{
+	// Empty out the previous addresses
+	this->devices.clear();
 
-	// Send a reset
-	// Write the SEARCH_ROM command
+	// set up some tracking variables
+	bool searchDone = false;
+	std::vector<BYTE> deviceAddress;	// Container for address of device
+	deviceAddress.resize(8);
+	int searchJunction = -1;
 
-	// Read bit A -> Address
-	// Read bit B -> Inverse of address
-	// Check if A == B
-	// Yes -> Devices on the network with both 1 and 0 here.
-	//		Choose a direction based on previous directions
-	// No -> A is the finalized bit
+
+	// Continue looping through looking for addresses until we're out of
+	// addresses to look for.
+	while(!searchDone)
+	{
+		if (!Reset()) return 0;	// No devices responded
+		WriteByte(OW_SEARCH_ROM);	// Send search command
+
+
+		searchDone = true;
+
+		// Run through the 64 bit address codes
+		for (int i = 0; i < 64; ++i)
+		{
+
+			searchDone = true;	// Assume we're done until we hit a junction
+
+			int lastJunction = -1;
+
+			BYTE a = ReadBit();		// Read ROM Bit
+			BYTE NOTa = ReadBit();	// Read ROM bit compliment
+			BYTE ibyte = i/8;
+			BYTE ibit = 1 << (i & 7);
+
+			// Lookup table:
+			// A	!A	Meaning
+			// 0	0	Both 1 and 0 address on the line
+			// 0	1	All devices on bus have 0 
+			// 1	0	All devices on bus have 1
+			// 1	1	No devices responded
+
+			// OneWire search is a depth-first search. We go as far as we can
+			// down the 0 path and then start going backwards up the tree, and
+			// diving deep into new paths before going back over old ones.
+
+			// Both returned a value of 1. This should not happen, but it
+			// indicates there are no devices on the network.
+			if (a && NOTa)
+			{
+				return 0;	// 1	1	no devices
+			}
+			else if (!a && !NOTa)		// 0	0	both addresses, pick one
+			{
+				if (i == searchJunction)// Previously seen, choose 1 road
+				{
+					a = 1;
+					searchJunction = lastJunction;
+				}
+				else if (i < searchJunction)
+				{
+					// We're not at the leaf node of the decision tree, take
+					// the previous route found in the address.
+					if (deviceAddress[ibyte] & ibit)
+					{
+						// Go down the pending junction
+						a = 1;
+					}
+					else
+					{	
+						// Only 0s count as pending junctions, we've already
+						// gone through them here
+						a = 0;
+						searchDone = false;
+						lastJunction = i;
+					}
+
+				}
+				else
+				{
+					// New trail found, set this as the deepest node and take
+					// the 0 path
+					a = 0;
+					searchDone = false;
+					searchJunction = i;
+				}
+
+				lastJunction = i;
+			}
+
+
+			if (a) deviceAddress[ibyte] |= ibit;
+			else deviceAddress[ibyte] &= ~ibit;
+
+			WriteBit(a);
+		}
+
+		// Add address to list of addresses
+		devices.push_back(deviceAddress);
+	}
+
+	// Completed looking for addresses
+	return 1;
+}
+
+
+// The 1-Wire CRC scheme is described in Maxim Application Note 27:
+// "Understanding and Using Cyclic Redundancy Checks with Maxim iButton Products"
+//
+
+#if ONEWIRE_CRC8_CALCULATION_METHOD
+//
+// Compute a Dallas Semiconductor 8 bit CRC. These show up in the ROM
+// and the registers.  (note: this might better be done without the
+// table, it would probably be smaller and certainly fast enough
+// compared to all those delayMicrosecond() calls.  But I got
+// confused, so I use this table from the examples.)  
+//
+BYTE OneWireMaster::CRC8(BYTE* addr, BYTE len)
+{
+	// This table comes from Dallas sample code where it is freely reusable, 
+	// though Copyright (C) 2000 Dallas Semiconductor Corporation
+	static BYTE dscrc_table[] = 
+	{
+		  0, 94,188,226, 97, 63,221,131,194,156,126, 32,163,253, 31, 65,
+		157,195, 33,127,252,162, 64, 30, 95,  1,227,189, 62, 96,130,220,
+		 35,125,159,193, 66, 28,254,160,225,191, 93,  3,128,222, 60, 98,
+		190,224,  2, 92,223,129, 99, 61,124, 34,192,158, 29, 67,161,255,
+		 70, 24,250,164, 39,121,155,197,132,218, 56,102,229,187, 89,  7,
+		219,133,103, 57,186,228,  6, 88, 25, 71,165,251,120, 38,196,154,
+		101, 59,217,135,  4, 90,184,230,167,249, 27, 69,198,152,122, 36,
+		248,166, 68, 26,153,199, 37,123, 58,100,134,216, 91,  5,231,185,
+		140,210, 48,110,237,179, 81, 15, 78, 16,242,172, 47,113,147,205,
+		 17, 79,173,243,112, 46,204,146,211,141,111, 49,178,236, 14, 80,
+		175,241, 19, 77,206,144,114, 44,109, 51,209,143, 12, 82,176,238,
+		 50,108,142,208, 83, 13,239,177,240,174, 76, 18,145,207, 45,115,
+		202,148,118, 40,171,245, 23, 73,  8, 86,180,234,105, 55,213,139,
+		 87,  9,235,181, 54,104,138,212,149,203, 41,119,244,170, 72, 22,
+		233,183, 85, 11,136,214, 52,106, 43,117,151,201, 74, 20,246,168,
+		116, 42,200,150, 21, 75,169,247,182,232, 10, 84,215,137,107, 53
+	};
+
+	BYTE i;
+	BYTE crc = 0;
+	
+	for (i = 0; i < len; i++)
+	{
+		crc  = dscrc_table[crc ^ addr[i] ];
+	}
+	
+	return crc;
+}
+#else
+//
+// Compute a Dallas Semiconductor 8 bit CRC directly. 
+//
+BYTE OneWireMaster::CRC8(BYTE* addr, BYTE len)
+{
+	BYTE i, j;
+	BYTE crc = 0;
+	
+	for (i = 0; i < len; i++) 
+	{
+		BYTE inbyte = addr[i];
+		for (j = 0; j < 8; j++) 
+		{
+			BYTE mix = (crc ^ inbyte) & 0x01;
+			crc >>= 1;
+			if (mix) crc ^= 0x8C;
+			inbyte >>= 1;
+		}
+	}
+	
+	return crc;
+}
+#endif
+
+
+//
+// Compute a Dallas Semiconductor 16 bit CRC. I have never seen one of
+// these, but here it is.
+//
+unsigned short OneWireMaster::CRC16(unsigned short* data, unsigned short len)
+{
+	static short oddparity[16] = { 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0 };
+
+	unsigned short i;
+	unsigned short crc = 0;
+	
+	for ( i = 0; i < len; i++) 
+	{
+		unsigned short cdata = data[len];
+	
+		cdata = (cdata ^ (crc & 0xff)) & 0xff;
+		crc >>= 8;
+	
+		if (oddparity[cdata & 0xf] ^ oddparity[cdata >> 4]) crc ^= 0xc001;
+	
+		cdata <<= 6;
+		crc ^= cdata;
+		cdata <<= 1;
+		crc ^= cdata;
+	}
+	
+	return crc;
+}
+
+

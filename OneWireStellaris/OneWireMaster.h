@@ -86,7 +86,7 @@
 #include "utils/ustdlib.h"
 
 #include "stellaris-pins/DigitalIOPin.h"
-#include "uSTL/uvector.h"
+#include <vector>
 
 // OneWire bus speed settings
 #define OW_SPEED_OVERDRIVE	0
@@ -99,6 +99,8 @@
 #define OW_MATCH_ROM		0x55
 #define OW_ALARM_SEARCH		0xEC
 #define OW_SKIP_ROM			0xCC
+
+#define OW_OVERDRIVE_SKIP	0x3C
 
 
 // The Dallas Semiconductor example code for OneWire CRC checking provides two
@@ -139,8 +141,8 @@ public:
 	
 
 	// Address search/select functions
-	BYTE* Search(void);
-	BYTE* Search(BYTE* newAddress);
+	int Search(void);
+
 	void MatchROM(BYTE rom[8]);
 	void SkipROM(void);
 	int SkipOverdrive(void);
@@ -150,7 +152,7 @@ public:
 	static unsigned short CRC16(unsigned short* data, unsigned short length);
 
 	// Container for device addresses
-	vector<vector<BYTE>> devices;
+	std::vector<std::vector<BYTE> > devices;
 private:
 	// Timing values array, populated based on the bus speed setting
 	const int* timing;
