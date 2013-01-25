@@ -183,7 +183,9 @@ int OneWireMaster::Reset(void)
 	WaitUS(timing[7]);	// Wait for reset duration
 	GPIOPin.Input();	// Bring bus to input mode
 	WaitUS(timing[8]);	// Wait for presence detect
-	result = GPIOPin.Read() == 0 ? 1 : 0; // See if there is a presence detect
+	result = GPIOPin.Read();
+	result = result == 0 ? 1 : 0;
+	//result = GPIOPin.Read() == 0 ? 1 : 0; // See if there is a presence detect
 	WaitUS(timing[9]);	// Finish out presence detect, ready for commands
 
 	return result;
