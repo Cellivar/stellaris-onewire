@@ -77,11 +77,6 @@
 
 #include "OneWireMaster.h"
 
-/**
- * Maximum number of allowed devices during a search. Default is 50
- */
-#define OW_MAX_NUM_DEVICES 50
-
 
 /**
  * Timing array for overdrive bus speed values

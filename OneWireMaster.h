@@ -104,6 +104,10 @@
 #define OW_OVERDRIVE_SKIP	0x3C
 
 
+//Maximum number of allowed devices during a search. Default is 50
+#define OW_MAX_NUM_DEVICES 50
+
+
 // The Dallas Semiconductor example code for OneWire CRC checking provides two
 // methods for computing the CRC of a line of data. This define allows you to
 // select which one you would prefer for your code base. Method 0 uses math to
