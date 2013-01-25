@@ -159,9 +159,10 @@ OneWireMaster::OneWireMaster(unsigned int busSpeed)
  */
 void OneWireMaster::WaitUS(unsigned int us)
 {
-	SysCtlDelay(us * (SysCtlClockGet() / 1000000 / 3));
+	if (us <= 0) return;
+	SysCtlDelay((us / 3) * (SysCtlClockGet() / 1000000 ));
 	// Alternative with pre-set clock:
-	// SysCtlDelay(us * (CLOCKSPEEDVALUE / 1000000 / 3));
+	// SysCtlDelay((us / 3) * (CLOCKSPEEDVALUE / 1000000 ));
 }
 
 /**
