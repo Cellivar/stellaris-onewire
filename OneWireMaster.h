@@ -87,6 +87,7 @@
 
 #include "stellaris-pins/DigitalIOPin.h"
 #include <vector>
+#include <algorithm>
 
 // OneWire bus speed settings
 #define OW_SPEED_OVERDRIVE	0

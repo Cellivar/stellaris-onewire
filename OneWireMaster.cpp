@@ -357,107 +357,105 @@ void OneWireMaster::SkipROM()
  */
 int OneWireMaster::Search(void)
 {
-	// Empty out the previous addresses
-	this->devices.clear();
 
-	// set up some tracking variables
-	bool searchDone = false;
-	std::vector<BYTE> deviceAddress;	// Container for address of device
-	deviceAddress.resize(8);
-	int searchJunction = -1;
+	// Set up variables before we start talking to the line, avoiding
+	// any weird timing issues
+	unsigned char bit, bitComp, buffNum;
+	std::vector<unsigned char> device;	// Container for device address
+	std::vector<unsigned char> stack;	// Container depth-first search stack
 
-
-	// Continue looping through looking for addresses until we're out of
-	// addresses to look for.
-	while(!searchDone)
+	while (true)
 	{
-		if (!Reset()) return 0;	// No devices responded
-		WriteByte(OW_SEARCH_ROM);	// Send search command
+		device.clear();
+		buffNum = 0;
 
+		this->Reset();
 
-		searchDone = true;
+		//this->WaitUS(1000);
 
-		// Run through the 64 bit address codes
+		this->WriteByte(OW_SEARCH_ROM);	// Run the search ROM command
+		this->WaitUS(100);
+
 		for (int i = 0; i < 64; ++i)
 		{
+			//this->WaitUS(100);
 
-			searchDone = true;	// Assume we're done until we hit a junction
+			bit = this->ReadBit();
+			bitComp = this->ReadBit();
 
-			int lastJunction = -1;
-
-			BYTE a = ReadBit();		// Read ROM Bit
-			BYTE NOTa = ReadBit();	// Read ROM bit compliment
-			BYTE ibyte = i/8;
-			BYTE ibit = 1 << (i & 7);
-
-			// Lookup table:
-			// A	!A	Meaning
-			// 0	0	Both 1 and 0 address on the line
-			// 0	1	All devices on bus have 0 
-			// 1	0	All devices on bus have 1
-			// 1	1	No devices responded
-
-			// OneWire search is a depth-first search. We go as far as we can
-			// down the 0 path and then start going backwards up the tree, and
-			// diving deep into new paths before going back over old ones.
-
-			// Both returned a value of 1. This should not happen, but it
-			// indicates there are no devices on the network.
-			if (a && NOTa)
+			if ((bit == 1) && (bitComp == 1))
 			{
-				return 0;	// 1	1	no devices
+				// Both values are 1, indicating that something went wrong, we should have
+				// gotten at least some signal. We're either down the wrong path, or there's nothing
+				// on the line. Either way, hang up.
+				return 0; // Something bad happened
 			}
-			else if (!a && !NOTa)		// 0	0	both addresses, pick one
+			else if (bit != bitComp)
 			{
-				if (i == searchJunction)// Previously seen, choose 1 road
-				{
-					a = 1;
-					searchJunction = lastJunction;
-				}
-				else if (i < searchJunction)
-				{
-					// We're not at the leaf node of the decision tree, take
-					// the previous route found in the address.
-					if (deviceAddress[ibyte] & ibit)
-					{
-						// Go down the pending junction
-						a = 1;
-					}
-					else
-					{	
-						// Only 0s count as pending junctions, we've already
-						// gone through them here
-						a = 0;
-						searchDone = false;
-						lastJunction = i;
-					}
+				// Two different values, meaning this single value is the one to take
 
+				this->WriteBit(bit);
+				buffNum >>= 1;
+				bit <<= 7;
+				buffNum |= bit;
+
+			}
+			else if ((bit == 0) && (bitComp == 0))
+			{
+				if (stack.size() == 0)
+				{
+					// Nothing here yet, start it up
+					stack.push_back(i);
+					this->WriteBit(0);
+					buffNum >>= 1;
 				}
 				else
 				{
-					// New trail found, set this as the deepest node and take
-					// the 0 path
-					a = 0;
-					searchDone = false;
-					searchJunction = i;
+					// Two different numbers. See if it's in the stack already
+					if (i == stack.back())
+					{
+						// We've been down these roads, time to choose a new one
+						stack.pop_back();
+						this->WriteBit(1);
+						buffNum >>= 1;
+						buffNum |= 0x80;
+					}
+					else if (i > stack.back())
+					{
+						// New decision to make, choose 0
+						stack.push_back(i);
+						this->WriteBit(0);
+						buffNum >>= 1;
+					}
+					else if (i < stack.back())
+					{
+						// Still going down a road, continue 0
+						this->WriteBit(0);
+						buffNum >>= 1;
+					}
 				}
-
-				lastJunction = i;
 			}
 
+			if ((i % 8) == 7)	// End of a byte, add it to the vector for the device
+			{
+				device.push_back(buffNum);
+				buffNum = 0;
+			}
 
-			if (a) deviceAddress[ibyte] |= ibit;
-			else deviceAddress[ibyte] &= ~ibit;
-
-			WriteBit(a);
 		}
 
-		// Add address to list of addresses
-		devices.push_back(deviceAddress);
+		// Sort into human format
+		std::reverse(device.begin(), device.end());
+
+		// Store the new device address in the table
+		this->devices.push_back(device);
+
+		if (stack.size() <= 0)
+			break;
+
 	}
 
-	// Completed looking for addresses
-	return 1;
+	return this->devices.size();
 }
 
 
