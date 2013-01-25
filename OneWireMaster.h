@@ -135,14 +135,14 @@ public:
 	int Reset(void);
 	int ReadByte(void);
 	void WriteByte(int data);
-	
 	int TouchByte(int data);
 	void Block(BYTE* data, int data_len);
 	
+	// Wait timer
+	void WaitUS(unsigned int us);
 
 	// Address search/select functions
 	int Search(void);
-
 	void MatchROM(BYTE rom[8]);
 	void SkipROM(void);
 	int SkipOverdrive(void);
@@ -165,7 +165,6 @@ private:
 	int ReadBit(void);
 
 	// Timing functions/constants
-	void WaitUS(unsigned int us);
 	static const int standardTime[10];
 	static const int overdriveTime[10];
 
