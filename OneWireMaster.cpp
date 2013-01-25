@@ -77,6 +77,11 @@
 
 #include "OneWireMaster.h"
 
+/**
+ * Maximum number of allowed devices during a search. Default is 50
+ */
+#define OW_MAX_NUM_DEVICES 50
+
 
 /**
  * Timing array for overdrive bus speed values
@@ -364,6 +369,8 @@ int OneWireMaster::Search(void)
 	std::vector<unsigned char> device;	// Container for device address
 	std::vector<unsigned char> stack;	// Container depth-first search stack
 
+	int safeCount = 0;	// Make sure we don't blow the heap with infinite devices
+
 	while (true)
 	{
 		device.clear();
@@ -450,8 +457,15 @@ int OneWireMaster::Search(void)
 		// Store the new device address in the table
 		this->devices.push_back(device);
 
+		++safeCount;
+
 		if (stack.size() <= 0)
 			break;
+
+		if (safeCount > OW_MAX_NUM_DEVICES)
+		{
+			return 0;
+		}
 
 	}
 
