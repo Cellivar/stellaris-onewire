@@ -19,13 +19,14 @@
  * published by the Free Software Foundation, either version 3 of the License, 
  * or (at your option) any later version.
  * 
- * OneWireCRC is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * The Stellaris OneWire Library is distributed in the hope that it will be 
+ * useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with OneWireCRC.  If not, see <http://www.gnu.org/licenses/>.
+ * along with the Stellaris OneWire Library.  
+ * If not, see <http://www.gnu.org/licenses/>.
  */
 /*
 * OneWireCRC. This is a port to mbed of Jim Studt's Adruino One Wire
@@ -86,8 +87,29 @@
 #include "utils/ustdlib.h"
 
 #include "stellaris-pins/DigitalIOPin.h"
+
 #include <vector>
-#include <algorithm>
+
+// Maximum number of allowed devices during a search. Default is 50. This is to
+// limit the occurance of memory overflow attacks via the bus. 
+//
+// Actually, it's more to limit the Stellaris from freaking out when it 
+// encouters a poorly wired OneWire bus, a bus held low will result in a stream 
+// of 0s pumped to the device table. Keep it something sensible to avoid 
+// blowing the stack
+#define OW_MAX_NUM_DEVICES 50
+
+// The Dallas Semiconductor example code for OneWire CRC checking provides two
+// methods for computing the CRC of a line of data. This define allows you to
+// select which one you would prefer for your code base. Method 0 uses math to
+// compute the value, leading to slightly smaller code size but slightly longer
+// computation time. Method 1 uses a lookup table, with slightly larger code
+// size but smaller computation time. Set the method you'd like to use in this
+// define here and the other will be omitted.
+#ifndef ONEWIRE_CRC8_CALCULATION_METHOD
+#define ONEWIRE_CRC8_CALCULATION_METHOD	1
+#endif // ONEWIRE_CRC8_CALCULATION_METHOD
+
 
 // OneWire bus speed settings
 #define OW_SPEED_OVERDRIVE	0
@@ -100,79 +122,68 @@
 #define OW_MATCH_ROM		0x55
 #define OW_ALARM_SEARCH		0xEC
 #define OW_SKIP_ROM			0xCC
-
 #define OW_OVERDRIVE_SKIP	0x3C
 
 
-//Maximum number of allowed devices during a search. Default is 50
-#define OW_MAX_NUM_DEVICES 50
 
-
-// The Dallas Semiconductor example code for OneWire CRC checking provides two
-// methods for computing the CRC of a line of data. This define allows you to
-// select which one you would prefer for your code base. Method 0 uses math to
-// compute the value, leading to slightly smaller code size but slightly longer
-// computation time. Method 1 uses a lookup table, with slightly larger code
-// size but smaller computation time. Set the method you'd like to use in this
-// define here.
-#ifndef ONEWIRE_CRC8_CALCULATION_METHOD
-#define ONEWIRE_CRC8_CALCULATION_METHOD	1
-#endif // ONEWIRE_CRC8_CALCULATION_METHOD
-
-typedef unsigned char BYTE;
-
-
-/**
- * OneWire Master generic operations
- */
-class OneWireMaster
+namespace OneWire
 {
-public:
-	OneWireMaster(unsigned int busSpeed);
-	OneWireMaster
-		( unsigned int busSpeed
-		, unsigned long gpioPeriph
-		, unsigned long gpioPort
-		, unsigned char gpioPinmask
-		);
 
-	// Standard bus functions
-	int Reset(void);
-	int ReadByte(void);
-	void WriteByte(int data);
-	int TouchByte(int data);
-	void Block(BYTE* data, int data_len);
+	typedef unsigned char BYTE;
+
+
+	/**
+	 * OneWire Master generic operations
+	 */
+	class OneWireMaster
+	{
+	public:
+		OneWireMaster(unsigned int busSpeed);
+		OneWireMaster
+			( unsigned int busSpeed
+			, unsigned long gpioPeriph
+			, unsigned long gpioPort
+			, unsigned char gpioPinmask
+			);
+
+		// Standard bus functions
+		int Reset(void);
+		BYTE ReadByte(void);
+		void WriteByte(BYTE data);
+		int TouchByte(BYTE data);
+		void Block(BYTE* data, int data_len);
 	
-	// Wait timer
-	void WaitUS(unsigned int us);
+		// Wait timer
+		void WaitUS(unsigned int us);
 
-	// Address search/select functions
-	int Search(void);
-	void MatchROM(BYTE rom[8]);
-	void SkipROM(void);
-	int SkipOverdrive(void);
+		// Address search/select functions
+		int Search(void);
+		void MatchROM(std::vector<BYTE> rom);
+		void SkipROM(void);
+		int SkipOverdrive(void);
 
-	// CRC check functions
-	static BYTE CRC8(BYTE* address, BYTE length);
-	static unsigned short CRC16(unsigned short* data, unsigned short length);
+		// CRC check functions
+		static BYTE CRC8(BYTE* address, BYTE length);
+		static unsigned short CRC16(unsigned short* data, unsigned short length);
 
-	// Container for device addresses
-	std::vector<std::vector<BYTE> > devices;
-private:
-	// Timing values array, populated based on the bus speed setting
-	const int* timing;
+		// Container for device addresses
+		std::vector<std::vector<BYTE> > devices;
+	private:
+		// Timing values array, populated based on the bus speed setting
+		const int* timing;
 
-	// GPIO port
-	DigitalIOPin GPIOPin;
+		// GPIO port
+		DigitalIOPin GPIOPin;
 
-	// read/write single bits to the bus
-	void WriteBit(int bit);
-	int ReadBit(void);
+		// read/write single bits to the bus
+		void WriteBit(BYTE bit);
+		BYTE ReadBit(void);
 
-	// Timing functions/constants
-	static const int standardTime[10];
-	static const int overdriveTime[10];
+		// Timing functions/constants
+		static const int standardTime[10];
+		static const int overdriveTime[10];
 
-};
+	};
 
+}
 #endif // STELLARIS_ONEWIRE_LIBRARY_CHAPMAN_H
